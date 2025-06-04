@@ -6,4 +6,6 @@ openai
 faiss-cpu
 tiktoken
 PyPDF2
+pypdf
 python-dotenv
+
