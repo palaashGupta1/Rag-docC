@@ -7,11 +7,11 @@ from langchain_community.vectorstores import FAISS
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain.chains import RetrievalQA
 
-# Load environment
+# Load environment variable
 load_dotenv()
 openai_api_key = os.getenv("OPENAI_API_KEY")
 
-# Streamlit UI config
+# Streamlit layout and styling
 st.set_page_config(page_title="Pastel RAG Chatbot", layout="wide")
 st.markdown("""
     <style>
@@ -24,7 +24,6 @@ st.markdown("""
 st.title("📄 Pastel RAG Chatbot")
 st.markdown("Upload a **PDF**, and ask questions based **only** on its content.")
 
-# File upload
 uploaded_file = st.file_uploader("Upload your document (PDF only)", type="pdf")
 
 if uploaded_file:
@@ -35,31 +34,32 @@ if uploaded_file:
     with open(file_path, "wb") as f:
         f.write(uploaded_file.getbuffer())
 
-    # Load + split document
+    # Load and split PDF
     loader = PyPDFLoader(file_path)
     documents = loader.load()
     splitter = CharacterTextSplitter(chunk_size=500, chunk_overlap=50)
     docs = splitter.split_documents(documents)
-    docs = docs[:100]  # Optional: prevent overload
+    docs = docs[:100]
 
-    # Embeddings
+    # Embed chunks
     embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
     try:
         vectorstore = FAISS.from_documents(docs, embeddings)
         retriever = vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": 3})
     except Exception as e:
-        st.error("❌ Failed to process document. Try a smaller or simpler PDF.")
+        st.error("❌ Failed to process document.")
         st.stop()
 
-    # Answer function
+    # STRICT similarity filter
     def custom_rag_answer(query):
-        matched_docs = retriever.get_relevant_documents(query)
+        query_embedding = embeddings.embed_query(query)
+        scored_docs = vectorstore.similarity_search_with_score_by_vector(query_embedding, k=3)
 
-        # If top result is weak, reject (rough heuristic)
-        if not matched_docs or len(matched_docs[0].page_content.strip()) < 30:
-            return "🤖 I can’t answer that. Please ask a question related to the uploaded document."
+        if not scored_docs or scored_docs[0][1] < 0.75:
+            return "🤖 Sorry, that topic doesn't appear in the uploaded document."
 
-        # Proceed with QA chain
+        matched_docs = [doc for doc, score in scored_docs]
+
         qa_chain = RetrievalQA.from_chain_type(
             llm=ChatOpenAI(temperature=0, openai_api_key=openai_api_key),
             chain_type="stuff",
@@ -67,12 +67,12 @@ if uploaded_file:
         )
         return qa_chain.run(query)
 
-    # User question UI
+    # Ask UI
     st.markdown("### Ask a question about your PDF:")
     user_question = st.text_input("Your question:")
 
     if user_question:
-        with st.spinner("💡 Thinking..."):
+        with st.spinner("💬 Thinking..."):
             response = custom_rag_answer(user_question)
         st.success("✅ Answer:")
         st.markdown(response)
