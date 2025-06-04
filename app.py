@@ -30,7 +30,17 @@ st.title("📄 Pastel RAG Chatbot")
 uploaded_file = st.file_uploader("Upload your document (PDF only)", type="pdf")
 
 if uploaded_file:
-    with open(f"docs/{uploaded_file.name}", "wb") as f:
+    import os
+
+# Ensure 'docs' folder exists (for Streamlit Cloud)
+if not os.path.exists("docs"):
+    os.makedirs("docs")
+
+# Save uploaded file
+file_path = os.path.join("docs", uploaded_file.name)
+with open(file_path, "wb") as f:
+    f.write(uploaded_file.getbuffer())
+
         f.write(uploaded_file.getbuffer())
 
     loader = PyPDFLoader(f"docs/{uploaded_file.name}")
